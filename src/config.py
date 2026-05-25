@@ -11,11 +11,8 @@ class Settings(BaseSettings):
     )
 
     # Paths
-    vector_store_dir: Path = Path("storage/faiss")
+    vector_store_dir: Path = Path("storage/faiss_index")
 
-    # Chunking
-    chunk_size: int = Field(default=1000, ge=100)
-    chunk_overlap: int = Field(default=150, ge=0)
 
     # Retrieval
     top_k: int = Field(default=5, ge=1, le=64)
@@ -23,6 +20,7 @@ class Settings(BaseSettings):
     # Embedding
     # embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_model: str = "intfloat/multilingual-e5-base"
+    RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
 
     # LLM
     llm_provider: str = "gemini"          # "openai" | "gemini" | "hf_local"
@@ -31,7 +29,6 @@ class Settings(BaseSettings):
     llm_max_tokens: int = Field(default=2048, ge=1)
 
     # API keys (loaded from .env, no RAG_ prefix)
-    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     google_api_key: str | None = Field(default=None, validation_alias="GOOGLE_API_KEY")
 
 
