@@ -3,13 +3,13 @@ from pathlib import Path
 from dataclasses import dataclass
 
 # Fix: dùng [\#\*\s]* thay vì [\#\*]*\s* để ăn cả "## **" trong một lần
-RE_CHUONG = re.compile(r'^\s*[\#\*\s]*Chương\s+([IVXLC]+|\d+)(.*)?$', re.IGNORECASE)
+RE_CHUONG = re.compile(r'^\s*[\#\*\s]*Chương\s+([IVXLC]+)(.*)?$', re.IGNORECASE)
 RE_DIEU   = re.compile(r'^\s*[\#\*\s]*Điều\s+(\d+)\.\s+(.+)')
 RE_MUC    = re.compile(r'^\s*[\#\*\s]*Mục\s+(\d+)\.?\s*(.*)', re.IGNORECASE)
 
 _MD = re.compile(r'[\#\*\_]+')   # dùng để strip ký hiệu markdown khỏi text
 
-
+ 
 @dataclass
 class ParserArticle:
     doc_id:      str
@@ -64,7 +64,7 @@ class LegalDocumentParser:
                 cur_chuong = m.group(1).upper()
                 # Tên chương có thể nằm cùng dòng sau số La Mã, hoặc ở dòng riêng tiếp theo
                 # Bỏ markdown và dấu ":" thừa (vd: "Chương 1:" → inline_name = "")
-                inline_name = _MD.sub('', m.group(2) or '').strip().strip(':').strip()[:200]
+                inline_name = _MD.sub('', m.group(2) or '').strip()[:200]
                 cur_chuong_name = inline_name  # nếu rỗng → fallback lấy dòng tiếp theo
                 continue
 
@@ -75,7 +75,7 @@ class LegalDocumentParser:
                     cur_chuong_name = _MD.sub('', s).strip()[:200]
                     continue
 
-            # ── Mục ─────────────────────────────────────────────────────────
+            # ── Mục 
             m = RE_MUC.match(s)
             if m:
                 flush_dieu()
@@ -84,7 +84,7 @@ class LegalDocumentParser:
                 cur_muc_name = _MD.sub('', m.group(2) or '').strip()[:200]
                 continue
 
-            # ── Điều ────────────────────────────────────────────────────────
+            # ── Điều  
             m = RE_DIEU.match(s)
             if m:
                 flush_dieu()

@@ -1,73 +1,161 @@
 import json
 import logging
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
-import fitz
-import google.genai as genai
-from google.genai import types
-
+from dotenv import load_dotenv
+# from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 log = logging.getLogger(__name__)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+load_dotenv()
+
 from src.config import settings
-from src.prompt import METADAT_PROMPT
+from src.prompt import METADATA_PROMPT
+# Các trường LLM phải trả về — dùng để validate và fallback
+_EXPECTED_FIELDS = {
+    "vehicle_types":          list,
+    "violation_category":     str,
+    "hanh_vi_vi_pham":        list,
+    "hinh_thuc_phat_bo_sung": list,
+    "doi_tuong_ap_dung":      str,
+    "has_penalty":            bool,
+}
+
+_FIELD_DEFAULTS: dict[str, Any] = {
+    "vehicle_types":          [],
+    "violation_category":     "",
+    "hanh_vi_vi_pham":        [],
+    "hinh_thuc_phat_bo_sung": [],
+    "doi_tuong_ap_dung":      "",
+    "has_penalty":            False,
+}
 
 
-class metadata_extract:
-    def __init__(self, api_key: str, registry: Path | str):
-        self.client   = genai.Client(api_key=api_key)
-        self.registry = Path(registry)          # ép kiểu Path để .parent luôn dùng được
-        self.registry.parent.mkdir(parents=True, exist_ok=True)
+def _parse_llm_response(raw: str) -> dict:
+    """
+    Parse JSON từ response LLM.
+    - Nếu response là JSON hợp lệ → trả về đúng kiểu.
+    - Nếu thiếu trường → điền default.
+    - Nếu sai kiểu (vd: string thay vì list) → ép kiểu hoặc dùng default.
+    """
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        log.warning("LLM trả về JSON không hợp lệ: %s | raw: %.200s", e, raw)
+        return dict(_FIELD_DEFAULTS)
 
-    # ── Trích nội dung trang đầu PDF ────────────────────────────────────────
-    def extract_first_pages(self, pdf_path: Path, number_page: int = 2) -> str:
-        text = ""
-        try:
-            doc       = fitz.open(pdf_path)
-            page_read = min(number_page, len(doc))
-            for i in range(page_read):              # fix: range(int), không iterate int
-                text += doc[i].get_text()
-            doc.close()
-        except Exception as e:
-            log.error('Lỗi đọc PDF %s: %s', pdf_path, e)
-        return text
+    result = {}
+    for field, expected_type in _EXPECTED_FIELDS.items():
+        value = data.get(field, _FIELD_DEFAULTS[field])
 
-    # ── Gọi LLM trích metadata → lưu registry ───────────────────────────────
-    def extract_save(self, pdf_path: Path, doc_id: str) -> dict:
-        raw_text = self.extract_first_pages(pdf_path)
-        if not raw_text:
-            log.warning('Không đọc được nội dung PDF: %s', pdf_path)
-            return {}
+        # Ép kiểu nếu LLM trả sai
+        if expected_type is list and not isinstance(value, list):
+            # Đôi khi LLM trả string thay vì list → wrap vào list
+            value = [value] if value else []
+        elif expected_type is str and not isinstance(value, str):
+            value = str(value) if value is not None else ""
+        elif expected_type is bool and not isinstance(value, bool):
+            # "true"/"false" string → bool
+            value = str(value).lower() in ("true", "1", "yes")
 
-        prompt = METADAT_PROMPT(raw_text)
-        try:
-            response = self.client.models.generate_content(
-                model=settings.llm_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type='application/json'),
-            )
-            metadata = json.loads(response.text)
-            self._upsert_to_registry(doc_id, metadata)
-            return metadata                          # fix: thêm return
-        except Exception as e:
-            log.error('Lỗi LLM khi trích metadata: %s', e)
-            return {}
+        result[field] = value
 
-    # ── Ghi/cập nhật registry.json ──────────────────────────────────────────
-    def _upsert_to_registry(self, doc_id: str, new_metadata: dict):
-        registry_data = {}
+    return result
 
-        if self.registry.exists():
-            try:
-                registry_data = json.loads(self.registry.read_text(encoding='utf-8'))
-            except json.JSONDecodeError:
-                log.warning('registry.json bị lỗi format, tạo lại từ đầu.')
 
-        registry_data[doc_id] = new_metadata
-        self.registry.write_text(
-            json.dumps(registry_data, ensure_ascii=False, indent=2),
-            encoding='utf-8',
+class MetadataExtractor:
+    """
+    Gọi Gemini API để trích xuất 6 trường ngữ nghĩa cho từng chunk.
+
+    Cách dùng:
+        extractor = MetadataExtractor(api_key="...")
+        chunks_with_meta = extractor.enrich_chunks(chunks)
+    """
+
+    def __init__(self, api_key: str, retry: int = 2, delay: float = 1.0):
+        """
+        Args:
+            api_key: Google Gemini API key.
+            retry:   Số lần thử lại khi API lỗi.
+            delay:   Giây chờ giữa các lần retry.
+        """
+        self.llm = ChatOpenAI(
+            model=settings.llm_model, # Trong .env hãy set llm_model="deepseek-chat"
+            api_key=api_key,
+            base_url="https://api.deepseek.com", 
+            temperature=0.0,
+            model_kwargs={"response_format": {"type": "json_object"}} # Ép DeepSeek trả về JSON thuần
         )
-        log.info('Đã lưu metadata của %s vào %s', doc_id, self.registry.name)
+        self.retry = retry
+        self.delay = delay
+
+    def enrich_chunk(self, chunk: dict) -> dict:
+        """
+        Gọi LLM API để trích xuất metadata cho 1 chunk.
+
+        Nhận vào:
+            chunk: dict có key "text" và "metadata" (từ chunking.py)
+
+        Trả về:
+            chunk mới với metadata đã được cập nhật 6 trường ngữ nghĩa.
+            Nếu API lỗi → giữ nguyên giá trị None đã có, không crash pipeline.
+        """
+        text = chunk.get("text", "")
+        if not text.strip():
+            log.warning("Chunk '%s' có text rỗng, bỏ qua.", chunk.get("chunk_id", "?"))
+            return chunk
+
+        # Tạo prompt từ hàm METADAT_PROMPT (nhận raw_text, trả về chuỗi prompt hoàn chỉnh)
+        prompt = METADATA_PROMPT(text)
+
+        llm_meta = None
+        for attempt in range(1, self.retry + 2):   # retry+1 lần thử tổng cộng
+            try:
+                response = self.llm.invoke(prompt)
+                llm_meta = _parse_llm_response(response.content)
+                break   # thành công → thoát vòng retry
+
+            except Exception as e:
+                log.warning(
+                    "Lần %d/%d — API lỗi cho chunk '%s': %s",
+                    attempt, self.retry + 1, chunk.get("chunk_id", "?"), e,
+                )
+                if attempt <= self.retry:
+                    time.sleep(self.delay)
+                else:
+                    log.error("Đã thử %d lần, dùng metadata mặc định.", self.retry + 1)
+                    llm_meta = dict(_FIELD_DEFAULTS)
+
+        # Merge kết quả LLM vào metadata đã có của chunk (không xóa các trường cũ)
+        updated_chunk = dict(chunk)
+        updated_chunk["metadata"] = {**chunk.get("metadata", {}), **llm_meta}
+        return updated_chunk
+
+    def enrich_chunks(self, chunks: list[dict], log_every: int = 50) -> list[dict]:
+        """
+        Enrich toàn bộ danh sách chunk.
+
+        Args:
+            chunks:    Output từ chunk_all() trong chunking.py.
+            log_every: Log tiến độ mỗi N chunk.
+
+        Trả về:
+            Danh sách chunk đã có đầy đủ 6 trường metadata ngữ nghĩa.
+        """
+        total = len(chunks)
+        result = []
+
+        for i, chunk in enumerate(chunks, 1):
+            enriched = self.enrich_chunk(chunk)
+            result.append(enriched)
+
+            if i % log_every == 0 or i == total:
+                log.info("Metadata enrichment: %d/%d chunks", i, total)
+
+        log.info("Hoàn tất enrich %d chunks.", total)
+        return result

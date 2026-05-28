@@ -7,11 +7,11 @@ log = logging.getLogger(__name__)
 MULTI_BLANK = re.compile(r'\n{3,}')
 TAB_PATTERN = re.compile(r'\t+')
 
-CHUONG_I_PATTERN = re.compile(r'Chương\s+(0?1|I)\b', re.IGNORECASE)
+CHUONG_I_PATTERN = re.compile(r'Chương\s+I', re.IGNORECASE)
 
 STOP_PATTERN = re.compile(
-    r'Nơi\s*nhận|TM\.\s*CHÍNH\s*PHỦ|Mục\s*lục',
-    re.IGNORECASE | re.UNICODE,
+    r'Nơi\s*nhận|TM\.\s*CHÍNH\s*PHỦ',
+    re.IGNORECASE
 )
 
 
@@ -28,7 +28,6 @@ def clear_document(raw_text: str) -> str:
         log.warning("Không tìm thấy 'Chương I' trong văn bản.")
         return raw_text.strip()
 
-    log.info("Tìm thấy 'Chương I' tại dòng %d: %s", start_idx + 1, lines[start_idx].strip())
 
     content_lines = []
     for line in lines[start_idx:]:

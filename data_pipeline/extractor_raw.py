@@ -15,10 +15,10 @@ class LegalMarkdownProcess:
             f.write(md_text)
         return md_text
 
-# if __name__ == "__main__":
-#     processor = LegalMarkdownProcess(
-#         input_pdf="D:\\trafficChatbot_rag\\data\\raw_data\\168_2024_ND-CP_619502.pdf",
-#         output_md="D:\\trafficChatbot_rag\\data\\processor\\168_2024_ND-CP_619502_raw.md"
-#     )
-#     processor.pdf_to_markdown()
-#     print("Đã chuyển đổi thành công sang file .md!")
+if __name__ == "__main__":
+    processor = LegalMarkdownProcess(
+        input_pdf="D:\\trafficChatbot_rag\\data\\raw_data\\168_2024_ND-CP_619502.pdf",
+        output_md="D:\\trafficChatbot_rag\\data\\processor\\168_2024_ND-CP_619502_raw.md"
+    )
+    processor.pdf_to_markdown()
+    print("Đã chuyển đổi thành công sang file .md!")

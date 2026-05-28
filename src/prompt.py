@@ -4,20 +4,36 @@ from langchain_core.prompts import PromptTemplate
 # PROMPT 1: Trích xuất metadata từ PDF
 # ==========================================
 
-def METADAT_PROMPT(raw_text: str) -> str:
-    return f"""Bạn là chuyên gia phân tích văn bản pháp luật Việt Nam.
-Hãy đọc đoạn văn bản sau (trích từ trang đầu của một văn bản pháp luật) và trích xuất metadata.
-
-Trả về JSON hợp lệ với đúng các trường sau, không thêm trường khác:
+def METADATA_PROMPT(raw_text: str) -> str:
+    return f"""BĐọc đoạn văn bản luật giao thông sau và điền vào JSON.
+      CHỈ trả về JSON, không giải thích.
 {{
-  "ten_day_du": "Tên đầy đủ của văn bản (ví dụ: Nghị định 168/2024/NĐ-CP)",
-  "so_hieu": "Số hiệu văn bản (ví dụ: 168/2024/NĐ-CP)",
-  "loai_van_ban": "Loại văn bản (Nghị định / Thông tư / Luật / Quyết định / ...)",
-  "co_quan_ban_hanh": "Cơ quan ban hành (ví dụ: Chính phủ)",
-  "ngay_ban_hanh": "Ngày ban hành định dạng YYYY-MM-DD (ví dụ: 2024-12-26)",
-  "linh_vuc": "Lĩnh vực áp dụng (ví dụ: Giao thông đường bộ)",
-  "hieu_luc_tu": "Ngày có hiệu lực định dạng YYYY-MM-DD, để null nếu không có",
-  "mo_ta": "Mô tả ngắn nội dung chính của văn bản (1-2 câu)"
+  "vehicle_types": [],
+  // Danh sách loại xe. Chọn từ:
+  // "xe mô tô", "xe gắn máy", "xe máy điện",
+  // "xe ô tô", "xe tải", "xe khách", "tất cả"
+  // [] nếu không đề cập đến loại xe cụ thể
+
+  "violation_category": "",
+  // Chọn 1 trong:
+  // thiet_bi_an_toan | toc_do | nong_do_con |
+  // giay_to_quen | giay_to_khong_co | tin_hieu_den |
+  // lan_duong | do_xe | tai_trong |
+  // giao_xe_sai | hinh_thuc_xu_phat | quy_dinh_chung
+
+  "hanh_vi_vi_pham": [],
+  // Liệt kê từng hành vi bị phạt, dùng đúng từ trong văn bản
+
+  "hinh_thuc_phat_bo_sung": [],
+  // Chọn từ: "tuoc_gplx_1_3_thang", "tuoc_gplx_2_4_thang",
+  // "tuoc_gplx_3_6_thang", "tam_giu_xe", "tich_thu_tang_vat"
+  // [] nếu không có
+
+  "doi_tuong_ap_dung": "",
+  // "nguoi_dieu_khien" | "chu_xe" | "ca_hai" | "khac"
+
+  "has_penalty": true
+  // true nếu đoạn này có quy định mức phạt tiền cụ thể
 }}
 
 Văn bản cần phân tích:
