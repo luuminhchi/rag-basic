@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import get_rag
-from src.rag import TrafficLawger
+from generator import TrafficLawger
 
 router = APIRouter()
 

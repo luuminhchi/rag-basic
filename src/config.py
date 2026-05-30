@@ -12,18 +12,18 @@ class Settings(BaseSettings):
 
     # Paths
     vector_store_dir: Path = Path("storage/faiss_index")
+    bm25_path: Path = Path("storage/bm25_index.pkl")
 
 
     # Retrieval
     top_k: int = Field(default=5, ge=1, le=64)
 
     # Embedding
-    # embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    embedding_model: str = "intfloat/multilingual-e5-base"
-    RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    RERANKER_MODEL: str = "amberoad/bert-multilingual-passage-reranking-msmarco"
 
     # LLM
-    # llm_provider: str = "gemini"          # "openai" | "gemini" | "hf_local"
+    llm_provider: str = "deepseek"          # "openai" | "gemini" | "hf_local"
     # llm_model: str = "gemini-2.5-flash"          #gpt-4o.mini
     llm_model: str = 'deepseek-v4-flash'
     # llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)

@@ -1,5 +1,5 @@
 from src.vector_db import load_vector_store
-from src.rag import TrafficLawger
+from generator import TrafficLawger
 
 _rag_instance: TrafficLawger | None = None
 
