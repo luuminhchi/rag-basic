@@ -13,7 +13,7 @@ class TrafficLawger:
         self.llm = llm
 
     def chat(self, user_query: str) -> str:
-        retrieved_docs = execute_retrieval_pipeline(user_query = user_query)
+        retrieved_docs, rewritten_query = execute_retrieval_pipeline(user_query = user_query)
         if not retrieved_docs:
             return "Xin lỗi, tôi không tìm thấy tài liệu nào liên quan đến câu hỏi của bạn."
 

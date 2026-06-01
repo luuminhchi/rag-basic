@@ -53,17 +53,16 @@ class LegalDocumentParser:
         for line in lines:
             s = line.strip()
             if not s:
-                continue
+                continue 
 
-            # ── Chương ──────────────────────────────────────────────────────
+            # ── Chương
             m = RE_CHUONG.match(s)
             if m:
                 flush_dieu()
                 cur_so, cur_lines = 0, []
-                cur_muc, cur_muc_name = '', ''          # fix: reset mục khi sang chương mới
+                cur_muc, cur_muc_name = '', ''          
                 cur_chuong = m.group(1).upper()
-                # Tên chương có thể nằm cùng dòng sau số La Mã, hoặc ở dòng riêng tiếp theo
-                # Bỏ markdown và dấu ":" thừa (vd: "Chương 1:" → inline_name = "")
+              
                 inline_name = _MD.sub('', m.group(2) or '').strip()[:200]
                 cur_chuong_name = inline_name  # nếu rỗng → fallback lấy dòng tiếp theo
                 continue

@@ -23,11 +23,50 @@ PATTERNS = {
         )
 }
 
+STANDARD_VEHICLES = [
+    "xe ô tô", "xe chở người bốn bánh có gắn động cơ", "xe chở hàng bốn bánh có gắn động cơ", "các loại xe tương tự xe ô tô",
+    "xe mô tô", "xe gắn máy", "xe máy điện", "các loại xe tương tự xe mô tô",
+    "máy kéo", "xe máy chuyên dùng",
+    "xe đạp", "xe đạp máy", "xe thô sơ",
+    "người đi bộ", "người điều khiển, dẫn dắt súc vật", "kéo xe súc vật"
+]
+
+def extract_vehicles_from_text(text: str) -> list[str]:
+    """Hàm quét tìm MỌI loại phương tiện có xuất hiện trong một đoạn text bất kỳ"""
+    if not text:
+        return []
+        
+    text_lower = text.lower()
+    found_vehicles = []
+    
+    for vehicle in STANDARD_VEHICLES:
+        if vehicle in text_lower:
+            found_vehicles.append(vehicle)
+            
+    return found_vehicles
 
 def _strip_markdown(text: str) -> str:
     """Bỏ ký hiệu Markdown (#, *, _) và chuẩn hóa khoảng trắng."""
     text = re.sub(r'[\#\*\_]', '', text)
     return re.sub(r'\s+', ' ', text).strip()
+
+
+def _assign_doc_section(chuong: str, dieu: int | None) -> str:
+    """
+    Gán nhóm tài liệu (doc_section) dựa trên Chương và số Điều.
+
+    Nhóm 1 — xu_phat:        Chương II, Điều 6-38  (Xử phạt theo phương tiện)
+    Nhóm 2 — tru_diem:       Chương V,  Điều 56-58 (Trừ điểm GPLX)
+    Nhóm 3 — thu_tuc:        Chương IV, VI          (Thẩm quyền + Thủ tục)
+    Nhóm 4 — quy_dinh_chung: Chương I, III          (Quy định chung)
+    """
+    if chuong == "II" or (dieu and 6 <= dieu <= 38):
+        return "xu_phat"
+    if chuong == "V" or (dieu and 56 <= dieu <= 58):
+        return "tru_diem"
+    if chuong in ("IV", "VI") or (dieu and (39 <= dieu <= 55 or 59 <= dieu <= 70)):
+        return "thu_tuc"
+    return "quy_dinh_chung"
 
 
 def parse_penalty(text: str) -> tuple[int, int]:
@@ -58,11 +97,13 @@ def chunk_article(article: ParserArticle) -> list[dict]:
         'muc_ten':           article.muc_name,
         'dieu':              article.so,
         'tieu_de':           article.tieu_de,
+        'doc_section':       _assign_doc_section(article.chuong, article.so),
     }
 
     parent_id  = f'{article.doc_id}_d{article.so}'
     chunks     = []
     pmin, pmax = parse_penalty(article.text)
+
     # ── CHUNK CẤP ĐIỀU 
     chunks.append({
         'chunk_id': parent_id,
@@ -76,7 +117,7 @@ def chunk_article(article: ParserArticle) -> list[dict]:
             'penalty_min': pmin,
             'penalty_max': pmax,
 
-            'vehicle_types': None,
+            'vehicle_types': [],
             'violation_category':  None,
             'hanh_vi_vi_pham': None,
             'hinh_thuc_phat_bo_sung': None,
@@ -101,7 +142,7 @@ def chunk_article(article: ParserArticle) -> list[dict]:
         body = body.strip()
         if not body:
             continue
-
+        
         # Lấy số khoản
         k_match  = re.match(r'^(\d+)\.', body)
         khoan_no = int(k_match.group(1)) if k_match else 0
@@ -120,12 +161,12 @@ def chunk_article(article: ParserArticle) -> list[dict]:
                 'penalty_min': pmin,
                 'penalty_max': pmax,
 
-                # 'vehicle_types': None,
-                # 'violation_category':  None,
-                # 'hanh_vi_vi_pham': None,
-                # 'hinh_thuc_phat_bo_sung': None,
-                # 'doi_tuong_ap_dung': None,
-                # 'has_penalty': pmin > 0
+                'vehicle_types': [],
+                'violation_category':  None,
+                'hanh_vi_vi_pham': None,
+                'hinh_thuc_phat_bo_sung': None,
+                'doi_tuong_ap_dung': None,
+                'has_penalty': pmin > 0
             },
         })
 
@@ -158,7 +199,7 @@ def chunk_article(article: ParserArticle) -> list[dict]:
                     'penalty_min': pmin,
                     'penalty_max': pmax,
 
-                    'vehicle_types': None,
+                    'vehicle_types': [],  # Kế thừa xe từ Điều cha
                     'violation_category':  None,
                     'hanh_vi_vi_pham': None,
                     'hinh_thuc_phat_bo_sung': None,
@@ -170,11 +211,37 @@ def chunk_article(article: ParserArticle) -> list[dict]:
     return chunks
 
 
+def _apply_smart_vehicle_inheritance(chunks: list[dict]) -> list[dict]:
+    """
+    Gán vehicle_types chính xác cho từng chunk theo logic kế thừa thông minh:
+    - Cấp Điều: chỉ dùng xe tìm thấy trong text của Điều đó.
+    - Cấp Khoản/Điểm: union xe của Điều cha + xe tìm thấy trong text của chính nó.
+    """
+    current_vehicles: list[str] = []
+
+    for chunk in chunks:
+        meta = chunk.get('metadata', {})
+        loai = meta.get('loai')
+        local_vehicles = extract_vehicles_from_text(chunk.get('text', ''))
+
+        if loai in ('dieu_phang', 'dieu'):
+            current_vehicles = local_vehicles
+            meta['vehicle_types'] = current_vehicles
+        else:
+            meta['vehicle_types'] = list(set(current_vehicles + local_vehicles))
+
+        chunk['metadata'] = meta
+
+    return chunks
+
+
 def chunk_all(articles: list[ParserArticle]) -> list[dict]:
     chunks = []
     for a in articles:
         chunks.extend(chunk_article(a))
-        
+
+    chunks = _apply_smart_vehicle_inheritance(chunks)
+
     parent_count = sum(1 for c in chunks if c["metadata"]["loai"] == "dieu_phang")
     child_count = sum(1 for c in chunks if c["metadata"]["loai"] in ["khoan", "diem"])
     log.info(f"Chunking hoàn tất: {parent_count} Parent + {child_count} Child = {len(chunks)} Chunks.")

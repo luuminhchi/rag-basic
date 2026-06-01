@@ -11,10 +11,24 @@ CATEGORY_MAP = {
     'giao_xe_sai': 'giao xe sai',
 }
 
+SECTION_MAP = {
+    'xu_phat':        'xử phạt vi phạm giao thông theo phương tiện',
+    'tru_diem':       'trừ điểm giấy phép lái xe',
+    'thu_tuc':        'thủ tục thẩm quyền xử phạt giao thông',
+    'quy_dinh_chung': 'quy định chung nguyên tắc giao thông',
+}
+
 def build_injection_text(chunk: dict) -> str:
     meta = chunk['metadata']
     original_text = chunk['text']
     parts = []
+
+    # [MOI] Them nhom tai lieu vao dau header
+    section = meta.get('doc_section', '')
+    if section:
+        section_label = SECTION_MAP.get(section, section)
+        parts.append(f'[Nhóm tài liệu]: {section_label}')
+
     if meta.get('vehicle_types'):
         vehicles_str = ', '.join(meta['vehicle_types'])
         parts.append(f'[Đối tượng áp dụng]: {vehicles_str}')
