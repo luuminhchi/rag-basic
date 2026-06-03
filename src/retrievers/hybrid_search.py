@@ -8,6 +8,7 @@ def hybrid_search(
         bm25_path: str,
         top_k: int = 10,
         target_section: str = "",        # [MOI] section tu Query Router
+        target_article: int = None,      # [FIX #4] Article number for hard filtering
 ) -> list:
     with open(bm25_path, 'rb') as f:
         bm25 = pickle.load(f)
@@ -37,6 +38,26 @@ def hybrid_search(
     # Soft boost 2 tang: section (tho) -> category (tinh)
     target_category = processed_query.get('filter', {}).get('violation_category', '')
     results = _reciprocal_rank_fusion(faiss_results, bm25_results, fetch_k)
+    
+    # [FIX #4] Article-level hard constraint filtering (BEFORE section boost)
+    if target_article is not None:
+        filtered_by_article = [
+            doc for doc in results
+            if doc.metadata.get('dieu') == target_article
+        ]
+        if filtered_by_article:
+            results = filtered_by_article
+            try:
+                print(f"[DEBUG ARTICLE]: Filtered to {len(results)} results for Article {target_article}")
+            except Exception:
+                pass
+        else:
+            try:
+                print(f"[WARN ARTICLE]: No results for Article {target_article}, using all section results")
+            except Exception:
+                pass
+    
+    # Section boost (after article filtering for efficiency)
     if target_section:
         results = _soft_section_boost(results, target_section, top_k * 2)
     if target_category:
@@ -55,6 +76,14 @@ def _reciprocal_rank_fusion(faiss_results, bm25_results, top_k, K=60) -> list:
         cid = doc.metadata['chunk_id']
         rrf_scores[cid] = rrf_scores.get(cid, 0) + 1 / (K + rank + 1)
         doc_map[cid] = doc
+        
+        # DEBUG: Check metadata preservation
+        if cid == "168_2024_ND-CP_619502_d11_k1_dpb":  # Article 11 traffic signal chunk
+            try:
+                section = doc.metadata.get('doc_section', 'MISSING')
+                print(f"[DEBUG RRF] FAISS result - chunk {cid}: section={section}")
+            except Exception:
+                pass
 
     for rank, item in enumerate(bm25_results[:K]):
         cid = item['chunk_id']
@@ -63,7 +92,18 @@ def _reciprocal_rank_fusion(faiss_results, bm25_results, top_k, K=60) -> list:
 
     sorted_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)
     # Chỉ trả về docs mà chúng ta có Document object (từ FAISS)
-    return [doc_map[cid] for cid in sorted_ids if cid in doc_map][:top_k * 2]
+    result = [doc_map[cid] for cid in sorted_ids if cid in doc_map][:top_k * 2]
+    
+    # DEBUG: Check metadata in output
+    try:
+        if result:
+            first_doc = result[0]
+            section = first_doc.metadata.get('doc_section', 'MISSING')
+            print(f"[DEBUG RRF OUTPUT] First result: section={section}, has_metadata={bool(first_doc.metadata)}")
+    except Exception:
+        pass
+    
+    return result
 
 
 def _soft_section_boost(docs, target_section: str, top_k: int) -> list:
@@ -73,6 +113,15 @@ def _soft_section_boost(docs, target_section: str, top_k: int) -> list:
     """
     matched = [d for d in docs if d.metadata.get('doc_section') == target_section]
     others  = [d for d in docs if d.metadata.get('doc_section') != target_section]
+    
+    # DEBUG: Check metadata before/after boost
+    try:
+        print(f"[DEBUG BOOST] Section boost: target={target_section}, matched={len(matched)}, others={len(others)}")
+        if docs:
+            print(f"[DEBUG BOOST] First doc section: {docs[0].metadata.get('doc_section', 'MISSING')}")
+    except Exception:
+        pass
+    
     return (matched + others)[:top_k]
 
 

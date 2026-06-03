@@ -52,13 +52,17 @@ def execute_retrieval_pipeline(user_query: str, top_k: int = 5) -> tuple[list, s
     except Exception:
         pass
 
-    # Buoc 2: Hybrid search voi 2 tang boost
+    # [FIX #4] Extract article number from processed result for filtering
+    target_article = processed.get('target_article')
+    
+    # Buoc 2: Hybrid search voi 2 tang boost + article-level filtering
     hybrid_results = hybrid_search(
         processed_query=processed,
         vectordb=vector_db,
         bm25_path=bm25,
         top_k=10,
         target_section=section,
+        target_article=target_article,  # [FIX #4] Pass article for filtering
     )
 
     # Buoc 3: Rerank
@@ -99,7 +103,15 @@ def execute_retrieval_pipeline(user_query: str, top_k: int = 5) -> tuple[list, s
             dieu = doc.metadata.get('dieu', '?')
             violation_cat = doc.metadata.get('violation_category', '?')
             chunk_type = doc.metadata.get('loai', '?')
-            print(f"   Top {i+1}: [section={section}] [dieu={dieu}] [loai={chunk_type}] [cat={violation_cat}]")
+            penalty_min = doc.metadata.get('penalty_min')
+            penalty_max = doc.metadata.get('penalty_max')
+            
+            # Format penalty string if available
+            penalty_str = ""
+            if penalty_min is not None and penalty_max is not None and penalty_min > 0:
+                penalty_str = f" [Mức phạt]: {penalty_min:,} - {penalty_max:,} đ"
+            
+            print(f"   Top {i+1}: [section={section}] [dieu={dieu}] [loai={chunk_type}] [cat={violation_cat}]{penalty_str}")
             print(f"           {doc.page_content[:120]}...\n")
     except Exception as e:
         print(f"[DEBUG ERROR]: {e}")

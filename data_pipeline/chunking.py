@@ -28,7 +28,7 @@ STANDARD_VEHICLES = [
     "xe mô tô", "xe gắn máy", "xe máy điện", "các loại xe tương tự xe mô tô",
     "máy kéo", "xe máy chuyên dùng",
     "xe đạp", "xe đạp máy", "xe thô sơ",
-    "người đi bộ", "người điều khiển, dẫn dắt súc vật", "kéo xe súc vật"
+    "người đi bộ", "người điều khiển, dẫn dắt súc vật", "kéo xe súc vật", "xe chở xác"
 ]
 
 def extract_vehicles_from_text(text: str) -> list[str]:

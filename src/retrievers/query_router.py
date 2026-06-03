@@ -48,6 +48,20 @@ ROUTE_RULES: dict[str, list[str]] = {
 }
 
 
+def extract_article_number(query: str) -> int | None:
+    """
+    Extract ARTICLE NUMBER from query (just the integer).
+    
+    Args:
+        query: Câu hỏi từ người dùng
+        
+    Returns:
+        Article number (1-70) or None if not found
+    """
+    match = re.search(r'Điều\s+(\d+)', query, re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
 def extract_article_for_routing(query: str) -> str | None:
     """
     Extract article number from query and determine its doc_section.
@@ -65,11 +79,9 @@ def extract_article_for_routing(query: str) -> str | None:
     - Articles 56-58: tru_diem  
     - Articles 59-70: thu_tuc
     """
-    match = re.search(r'Điều\s+(\d+)', query, re.IGNORECASE)
-    if not match:
+    dieu_num = extract_article_number(query)
+    if dieu_num is None:
         return None
-    
-    dieu_num = int(match.group(1))
     
     # Mirroring chunking.py _assign_doc_section logic
     if 1 <= dieu_num <= 5:
