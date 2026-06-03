@@ -13,12 +13,10 @@ from src.llm import llm
 
 logger = logging.getLogger(__name__)
 
-# ── Singleton state ──────────────────────────────────────────
 _rag_ready: bool = False
 
 
 async def startup_rag() -> None:
-    """Gọi khi ứng dụng khởi động: load vector store vào bộ nhớ."""
     global _rag_ready
     try:
         logger.info("Đang khởi tạo Vector Store…")
@@ -61,5 +59,6 @@ def get_generator():
 
 
 def get_llm():
-    """Trả về LLM singleton."""
-    return llm
+    """Tạo mới LLM instance cho mỗi request để tránh lỗi httpx client closed."""
+    from src.llm import get_llm as create_llm
+    return create_llm()

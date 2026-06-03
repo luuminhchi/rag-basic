@@ -10,6 +10,7 @@ Nhóm xu_phat là fallback vì:
   FAISS semantic đủ tốt.
 """
 from __future__ import annotations
+import re
 
 # ── Keyword rules theo thứ tự ưu tiên ────────────────────────
 ROUTE_RULES: dict[str, list[str]] = {
@@ -47,9 +48,52 @@ ROUTE_RULES: dict[str, list[str]] = {
 }
 
 
+def extract_article_for_routing(query: str) -> str | None:
+    """
+    Extract article number from query and determine its doc_section.
+    
+    Args:
+        query: Câu hỏi từ người dùng
+        
+    Returns:
+        doc_section or None if no article detected
+        
+    Logic (based on _assign_doc_section in chunking.py):
+    - Articles 1-5: quy_dinh_chung
+    - Articles 6-38: xu_phat
+    - Articles 39-55: thu_tuc
+    - Articles 56-58: tru_diem  
+    - Articles 59-70: thu_tuc
+    """
+    match = re.search(r'Điều\s+(\d+)', query, re.IGNORECASE)
+    if not match:
+        return None
+    
+    dieu_num = int(match.group(1))
+    
+    # Mirroring chunking.py _assign_doc_section logic
+    if 1 <= dieu_num <= 5:
+        return "quy_dinh_chung"
+    elif 6 <= dieu_num <= 38:
+        return "xu_phat"
+    elif 39 <= dieu_num <= 55:
+        return "thu_tuc"
+    elif 56 <= dieu_num <= 58:
+        return "tru_diem"
+    elif 59 <= dieu_num <= 70:
+        return "thu_tuc"
+    
+    return None
+
+
 def classify_query(query: str) -> str:
     """
     Phân loại câu hỏi → doc_section.
+    
+    Thứ tự ưu tiên:
+    1. Extract article number (Điều N)
+    2. Match keyword rules (tru_diem, thu_tuc, quy_dinh_chung)
+    3. Fallback to xu_phat
 
     Args:
         query: Câu hỏi gốc từ người dùng.
@@ -57,6 +101,12 @@ def classify_query(query: str) -> str:
     Returns:
         Một trong: 'xu_phat' | 'tru_diem' | 'thu_tuc' | 'quy_dinh_chung'
     """
+    # Priority 1: Check for article number
+    article_section = extract_article_for_routing(query)
+    if article_section:
+        return article_section
+    
+    # Priority 2: Match keywords
     query_lower = query.lower().strip()
 
     for section, keywords in ROUTE_RULES.items():

@@ -1,3 +1,3 @@
-from app.api.routers import chat, search
+from app.api.routers import chat
 
-__all__ = ["chat", "search"]
+__all__ = ["chat"]

@@ -69,13 +69,10 @@ def ask_question(
 ) -> ChatResponse:
     t0 = time.perf_counter()
     top_k = settings.top_k
-    logger.info("[CHAT] query=%r  top_k=%d", request.query, top_k)
 
     try:
-        # ── Bước 1: Retrieve ──────────────────────────────────
         docs, rewritten_query = retriever(user_query=request.query, top_k=top_k)
 
-        # ── Bước 2: Generate ────────────────────────────
         answer_raw = generator(
             user_query=request.query,
             retrieved_docs=docs,
@@ -83,10 +80,8 @@ def ask_question(
         )
 
         try:
-            # Parse chuỗi JSON nhận được từ LLM sang dict
             answer = json.loads(answer_raw)
         except Exception as e:
-            logger.warning("[CHAT] Không thể parse JSON từ LLM: %s. Sử dụng giải thích thô làm fallback.", e)
             answer = {
                 "found": True,
                 "is_general_query": True,
@@ -102,7 +97,6 @@ def ask_question(
         )
 
     elapsed = round(time.perf_counter() - t0, 3)
-    logger.info("[CHAT] Hoàn tất trong %.3fs", elapsed)
 
     return ChatResponse(
         answer=answer,

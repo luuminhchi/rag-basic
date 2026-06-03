@@ -6,7 +6,7 @@ from data_pipeline.parser import ParserArticle
 
 log = logging.getLogger(__name__)
 
-REGISTRY_PATH = Path(__file__).parent.parent / 'docs/docs_registry.json'
+# REGISTRY_PATH = Path(__file__).parent.parent / 'docs/docs_registry.json'
 
 PATTERNS = {
     # Cắt tại dòng bắt đầu bằng "1.", "2.", ... (Khoản)
@@ -54,11 +54,6 @@ def _strip_markdown(text: str) -> str:
 def _assign_doc_section(chuong: str, dieu: int | None) -> str:
     """
     Gán nhóm tài liệu (doc_section) dựa trên Chương và số Điều.
-
-    Nhóm 1 — xu_phat:        Chương II, Điều 6-38  (Xử phạt theo phương tiện)
-    Nhóm 2 — tru_diem:       Chương V,  Điều 56-58 (Trừ điểm GPLX)
-    Nhóm 3 — thu_tuc:        Chương IV, VI          (Thẩm quyền + Thủ tục)
-    Nhóm 4 — quy_dinh_chung: Chương I, III          (Quy định chung)
     """
     if chuong == "II" or (dieu and 6 <= dieu <= 38):
         return "xu_phat"
@@ -213,7 +208,7 @@ def chunk_article(article: ParserArticle) -> list[dict]:
 
 def _apply_smart_vehicle_inheritance(chunks: list[dict]) -> list[dict]:
     """
-    Gán vehicle_types chính xác cho từng chunk theo logic kế thừa thông minh:
+    Gán vehicle_types
     - Cấp Điều: chỉ dùng xe tìm thấy trong text của Điều đó.
     - Cấp Khoản/Điểm: union xe của Điều cha + xe tìm thấy trong text của chính nó.
     """

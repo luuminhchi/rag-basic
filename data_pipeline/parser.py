@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 # Fix: dùng [\#\*\s]* thay vì [\#\*]*\s* để ăn cả "## **" trong một lần
 RE_CHUONG = re.compile(r'^\s*[\#\*\s]*Chương\s+([IVXLC]+)(.*)?$', re.IGNORECASE)
-RE_DIEU   = re.compile(r'^\s*[\#\*\s]*Điều\s+(\d+)\.\s+(.+)')
-RE_MUC    = re.compile(r'^\s*[\#\*\s]*Mục\s+(\d+)\.?\s*(.*)', re.IGNORECASE)
+RE_DIEU   = re.compile(r'^\s*[\#\*\s]*Điều\s+(\d+)\.\s+(.+)') #+ bắt buộc phải có
+RE_MUC    = re.compile(r'^\s*[\#\*\s]*Mục\s+(\d+)\.?\s*(.*)$', re.IGNORECASE)
 
 _MD = re.compile(r'[\#\*\_]+')   # dùng để strip ký hiệu markdown khỏi text
 

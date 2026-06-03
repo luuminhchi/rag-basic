@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import json
+import re
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from langchain_core.messages import HumanMessage
 from data_pipeline.indexing.meta_injection import build_injection_text
@@ -59,10 +60,14 @@ Câu hỏi: {user_query}'''
 
     injected_query = build_injection_text(fake_chunk)
 
+    # Extract article number from original query for better retrieval targeting
+    target_article = extract_article_number(user_query)
+
     return {
         'original_query': user_query,
         'rewrite_query': rewrite['rewrite_query'],
         'injected_query': injected_query,
+        'target_article': target_article,  # Add article number for retrieval optimization
         'filter': {
             'vehicle_types': rewrite.get('vehicle_types', []),
             'violation_category': rewrite.get('violation_category', '')

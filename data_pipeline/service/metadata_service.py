@@ -18,35 +18,24 @@ from src.config import settings
 from src.prompt import METADATA_PROMPT
 # Các trường LLM phải trả về — dùng để validate và fallback
 _EXPECTED_FIELDS = {
-    "vehicle_types":          list,
     "violation_category":     str,
     "hanh_vi_vi_pham":        list,
     "hinh_thuc_phat_bo_sung": list,
     "doi_tuong_ap_dung":      str,
-    "has_penalty":            bool,
 }
 
 _FIELD_DEFAULTS: dict[str, Any] = {
-    "vehicle_types":          [],
     "violation_category":     "",
     "hanh_vi_vi_pham":        [],
     "hinh_thuc_phat_bo_sung": [],
     "doi_tuong_ap_dung":      "",
-    "has_penalty":            False,
 }
 
 
 def _parse_llm_response(raw: str) -> dict:
-    """
-    Parse JSON từ response LLM.
-    - Nếu response là JSON hợp lệ → trả về đúng kiểu.
-    - Nếu thiếu trường → điền default.
-    - Nếu sai kiểu (vd: string thay vì list) → ép kiểu hoặc dùng default.
-    """
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
-        log.warning("LLM trả về JSON không hợp lệ: %s | raw: %.200s", e, raw)
         return dict(_FIELD_DEFAULTS)
 
     result = {}
@@ -55,13 +44,11 @@ def _parse_llm_response(raw: str) -> dict:
 
         # Ép kiểu nếu LLM trả sai
         if expected_type is list and not isinstance(value, list):
-            # Đôi khi LLM trả string thay vì list → wrap vào list
             value = [value] if value else []
-        elif expected_type is str and not isinstance(value, str):
+        else:
+            expected_type is str and not isinstance(value, str)
             value = str(value) if value is not None else ""
-        elif expected_type is bool and not isinstance(value, bool):
-            # "true"/"false" string → bool
-            value = str(value).lower() in ("true", "1", "yes")
+      
 
         result[field] = value
 
@@ -69,13 +56,7 @@ def _parse_llm_response(raw: str) -> dict:
 
 
 class MetadataExtractor:
-    """
-    Gọi Gemini API để trích xuất 6 trường ngữ nghĩa cho từng chunk.
-
-    Cách dùng:
-        extractor = MetadataExtractor(api_key="...")
-        chunks_with_meta = extractor.enrich_chunks(chunks)
-    """
+   
 
     def __init__(self, api_key: str, retry: int = 2, delay: float = 1.0):
         """
@@ -98,12 +79,6 @@ class MetadataExtractor:
         """
         Gọi LLM API để trích xuất metadata cho 1 chunk.
 
-        Nhận vào:
-            chunk: dict có key "text" và "metadata" (từ chunking.py)
-
-        Trả về:
-            chunk mới với metadata đã được cập nhật 6 trường ngữ nghĩa.
-            Nếu API lỗi → giữ nguyên giá trị None đã có, không crash pipeline.
         """
         text = chunk.get("text", "")
         if not text.strip():
@@ -140,12 +115,6 @@ class MetadataExtractor:
         """
         Enrich toàn bộ danh sách chunk.
 
-        Args:
-            chunks:    Output từ chunk_all() trong chunking.py.
-            log_every: Log tiến độ mỗi N chunk.
-
-        Trả về:
-            Danh sách chunk đã có đầy đủ 6 trường metadata ngữ nghĩa.
         """
         total = len(chunks)
         result = []

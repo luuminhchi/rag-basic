@@ -95,8 +95,14 @@ def execute_retrieval_pipeline(user_query: str, top_k: int = 5) -> tuple[list, s
     try:
         print(f"\n[DEBUG RERANK]: Giu lai {len(final)} tai lieu tot nhat.")
         for i, doc in enumerate(final):
-            print(f"   Top {i+1}: [section={doc.metadata.get('doc_section','?')}] {doc.page_content[:120]}...\n")
-    except Exception:
+            section = doc.metadata.get('doc_section', '?')
+            dieu = doc.metadata.get('dieu', '?')
+            violation_cat = doc.metadata.get('violation_category', '?')
+            chunk_type = doc.metadata.get('loai', '?')
+            print(f"   Top {i+1}: [section={section}] [dieu={dieu}] [loai={chunk_type}] [cat={violation_cat}]")
+            print(f"           {doc.page_content[:120]}...\n")
+    except Exception as e:
+        print(f"[DEBUG ERROR]: {e}")
         pass
     return final, processed['rewrite_query']
 
