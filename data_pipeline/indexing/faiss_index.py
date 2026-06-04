@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
-from data_pipeline.indexing.meta_injection import build_injection_text
+from data_pipeline.indexing.meta_injection import build_meta_injection
 
 
 def build_faiss_index(chunk_path: str | Path, vector_db_path: str | Path, embedding_model):
@@ -14,7 +14,7 @@ def build_faiss_index(chunk_path: str | Path, vector_db_path: str | Path, embedd
 
     docs = []
     for chunk in chunks_data:
-        injection_text = build_injection_text(chunk)
+        injection_text = build_meta_injection(chunk['metadata'], chunk['text'])
         doc = Document(
             page_content=injection_text,
             metadata={

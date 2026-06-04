@@ -1,129 +1,49 @@
-"""
-Query Router — phân loại câu hỏi thành doc_section không cần gọi LLM.
-
-Nguyên tắc ưu tiên:
-    tru_diem > thu_tuc > quy_dinh_chung > xu_phat (fallback)
-
-Nhóm xu_phat là fallback vì:
-- Chiếm phần lớn câu hỏi người dùng (hỏi về phạt tiền theo xe)
-- Ngay cả khi router nhầm sang xu_phat, hybrid search vẫn tìm được nếu
-  FAISS semantic đủ tốt.
-"""
-from __future__ import annotations
 import re
 
-# ── Keyword rules theo thứ tự ưu tiên ────────────────────────
-ROUTE_RULES: dict[str, list[str]] = {
-    "tru_diem": [
-        "trừ điểm", "tru diem",
-        "mất điểm", "mat diem",
-        "bị trừ mấy điểm", "bị trừ bao nhiêu điểm",
-        "còn mấy điểm", "con may diem",
-        "phục hồi điểm", "phuc hoi diem",
-        "khôi phục điểm", "khoi phuc diem",
-        "điểm giấy phép", "diem giay phep",
-        "điểm gplx", "diem gplx",
-    ],
-    "thu_tuc": [
-        "nộp phạt ở đâu", "nop phat o dau",
-        "ai có quyền phạt", "ai co quyen phat",
-        "thủ tục", "thu tuc",
-        "khiếu nại", "khieu nai",
-        "thi hành", "thi hanh",
-        "thẩm quyền", "tham quyen",
-        "nộp tiền phạt", "nop tien phat",
-        "biên bản", "bien ban",
-        "quyết định xử phạt", "quyet dinh xu phat",
-        "cơ quan nào", "co quan nao",
-        "trình tự", "trinh tu",
-    ],
-    "quy_dinh_chung": [
-        "định nghĩa", "dinh nghia",
-        "khái niệm", "khai niem",
-        "nguyên tắc chung", "nguyen tac chung",
-        "phạm vi áp dụng", "pham vi ap dung",
-        "hiệu lực thi hành", "hieu luc thi hanh",
-        "giải thích từ ngữ", "giai thich tu ngu",
-    ],
-}
+from src.retrievers.intent_classifier import INTENT_TYPES
+from src.retrievers.section_resolver import INTENT_TO_SECTION
+from src.retrievers.filter_builder import extract_entities
 
-
-def extract_article_number(query: str) -> int | None:
+def classify_query(query: str) -> dict:
     """
-    Extract ARTICLE NUMBER from query (just the integer).
-    
-    Args:
-        query: Câu hỏi từ người dùng
-        
-    Returns:
-        Article number (1-70) or None if not found
+    Output đầy đủ để routing + filter cho hybrid search
     """
-    match = re.search(r'Điều\s+(\d+)', query, re.IGNORECASE)
-    return int(match.group(1)) if match else None
+    query_lower = query.lower()
 
+    # Tầng 1: detect intent
+    intent = 'query_muc_phat'  # default
+    for intent_type, patterns in INTENT_TYPES.items():
+        if any(re.search(p, query_lower) for p in patterns):
+            intent = intent_type
+            break
 
-def extract_article_for_routing(query: str) -> str | None:
-    """
-    Extract article number from query and determine its doc_section.
-    
-    Args:
-        query: Câu hỏi từ người dùng
-        
-    Returns:
-        doc_section or None if no article detected
-        
-    Logic (based on _assign_doc_section in chunking.py):
-    - Articles 1-5: quy_dinh_chung
-    - Articles 6-38: xu_phat
-    - Articles 39-55: thu_tuc
-    - Articles 56-58: tru_diem  
-    - Articles 59-70: thu_tuc
-    """
-    dieu_num = extract_article_number(query)
-    if dieu_num is None:
-        return None
-    
-    # Mirroring chunking.py _assign_doc_section logic
-    if 1 <= dieu_num <= 5:
-        return "quy_dinh_chung"
-    elif 6 <= dieu_num <= 38:
-        return "xu_phat"
-    elif 39 <= dieu_num <= 55:
-        return "thu_tuc"
-    elif 56 <= dieu_num <= 58:
-        return "tru_diem"
-    elif 59 <= dieu_num <= 70:
-        return "thu_tuc"
-    
-    return None
+    # Tầng 2: section từ intent
+    section_info = INTENT_TO_SECTION[intent]
 
+    # Tầng 3: entity extraction
+    entities = extract_entities(query)
 
-def classify_query(query: str) -> str:
-    """
-    Phân loại câu hỏi → doc_section.
-    
-    Thứ tự ưu tiên:
-    1. Extract article number (Điều N)
-    2. Match keyword rules (tru_diem, thu_tuc, quy_dinh_chung)
-    3. Fallback to xu_phat
+    # Merge subsection: entity override intent nếu có
+    final_subsection = entities['doc_subsection'] or section_info['doc_subsection']
 
-    Args:
-        query: Câu hỏi gốc từ người dùng.
+    return {
+        # Routing
+        'intent':         intent,
+        'doc_section':    section_info['doc_section'],
+        'doc_subsection': final_subsection,
 
-    Returns:
-        Một trong: 'xu_phat' | 'tru_diem' | 'thu_tuc' | 'quy_dinh_chung'
-    """
-    # Priority 1: Check for article number
-    article_section = extract_article_for_routing(query)
-    if article_section:
-        return article_section
-    
-    # Priority 2: Match keywords
-    query_lower = query.lower().strip()
+        # Filter cho hybrid search
+        'filter': {
+            'doc_section':    section_info['doc_section'],
+            'doc_subsection': final_subsection,
+            'vehicle_groups': entities['vehicle_group'],
+            **entities['special']
+        },
 
-    for section, keywords in ROUTE_RULES.items():
-        if any(kw in query_lower for kw in keywords):
-            return section
-
-    # Fallback: nhóm phổ biến nhất
-    return "xu_phat"
+        # Rewrite hint — truyền vào query rewriter
+        'rewrite_context': {
+            'intent':       intent,
+            'vehicle':      entities['vehicle_group'],
+            'filter_fields': section_info['filter_fields']
+        }
+    }

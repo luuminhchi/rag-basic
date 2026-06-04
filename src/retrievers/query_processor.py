@@ -1,119 +1,104 @@
-from pathlib import Path
-import sys
 import json
 import re
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from langchain_core.messages import HumanMessage
-from data_pipeline.indexing.meta_injection import build_injection_text
-from src.retrievers.query_router import extract_article_number, classify_query
+from data_pipeline.indexing.meta_injection import build_meta_injection
 
-def rewrite_and_inject(user_query: str, llm) -> str:
-    # ← [FIX #1] Extract article number early
-    target_article = extract_article_number(user_query)
-    target_section = classify_query(user_query)
-    
-    # ← [FIX #3] Enhanced rewrite prompt with article context
-    if target_article:
-        # Article-specific rewrite: preserve article number in result
-        prompt = f'''Viết lại câu hỏi bằng thuật ngữ pháp lý giao thông Việt Nam.
-Câu hỏi này về ĐIỀU {target_article} (mục {target_section}).
+VIOLATION_CATEGORIES = [
+    "thiet_bi_an_toan",  # mũ bảo hiểm, đèn xe, còi, dây an toàn
+    "toc_do",            # quá tốc độ, chạy dưới tốc độ tối thiểu
+    "nong_do_con",       # rượu bia, nồng độ cồn, ma tuý
+    "giay_to_quen",      # CÓ giấy tờ nhưng không mang theo
+    "giay_to_khong_co",  # KHÔNG CÓ / hết hạn giấy tờ
+    "tin_hieu_den",      # vượt đèn đỏ, không chấp hành tín hiệu
+    "lan_duong",         # sai làn, ngược chiều
+    "vuot_xe",           # vượt xe sai quy định
+    "do_xe",             # dừng đỗ sai quy định
+    "tai_trong",         # quá tải, quá số người
+    "giao_xe_sai",       # giao xe cho người không đủ điều kiện
+    "phu_hieu",          # phù hiệu kinh doanh vận tải
+    "hanh_trinh",        # sai tuyến đường, lịch trình
+    "thiet_bi_giam_sat", # camera, thiết bị giám sát hành trình
+]
 
-QUAN TRỌNG: Giữ lại số điều trong câu viết lại để đảm bảo tính chính xác!
-Ví dụ:
-- Input: "Điều 15 nói về nội dung gì?" → Output: "Điều 15 - hành vi không mang mũ bảo hiểm"
-- Input: "Điều 20 quy định như thế nào?" → Output: "Điều 20 - hành vi điều khiển xe khi say xỉn"
+REWRITE_PROMPT = """Bạn là chuyên gia pháp luật giao thông Việt Nam.
 
-Chỉ trả về JSON hợp lệ, không giải thích, không markdown, không code block.
+Nhiệm vụ: Trích xuất thông tin từ câu hỏi và viết lại bằng thuật ngữ pháp lý chuẩn.
 
-Danh sách violation_category (chọn 1 phù hợp nhất):
-- "thiet_bi_an_toan": mũ bảo hiểm, gương chiếu hậu, đèn xe, còi, dây an toàn
-- "toc_do": chạy quá tốc độ, vượt tốc độ quy định
-- "nong_do_con": uống rượu bia khi lái xe, nồng độ cồn
-- "giay_to_quen": có giấy tờ nhưng không mang theo khi lái xe (quên mang GPLX, đăng ký xe, bảo hiểm)
-- "giay_to_khong_co": không có giấy phép lái xe, không có đăng ký xe (chưa từng được cấp hoặc hết hạn)
-- "tin_hieu_den": vượt đèn đỏ, không chấp hành tín hiệu đèn giao thông
-- "lan_duong": đi sai làn, vượt xe sai quy định, đi ngược chiều
-- "do_xe": dừng đỗ sai quy định, đỗ xe trên vỉa hè
-- "tai_trong": chở quá tải, quá số người quy định
-- "giao_xe_sai": giao xe cho người không đủ điều kiện
+Ngữ cảnh tìm kiếm:
+- Nhóm văn bản: {doc_section}
+- Nhóm vi phạm: {doc_subsection}
 
-LƯU Ý QUAN TRỌNG:
-- "không mang theo" / "quên mang" giấy tờ → dùng "giay_to_quen"
-- "không có" / "chưa có" / "hết hạn" giấy tờ → dùng "giay_to_khong_co"
+Chuẩn hoá phương tiện theo văn bản pháp luật:
+- xe máy / tay ga / xe số → ["xe mô tô", "xe gắn máy"]
+- ô tô / xe hơi / xe con  → ["xe ô tô"]
+- không đề cập            → []
 
-Format trả về:
+Danh sách violation_category (chọn 1):
+{categories}
+
+Phân biệt giấy tờ:
+- "quên mang" / "không mang theo" → giay_to_quen
+- "không có"  / "hết hạn"         → giay_to_khong_co
+
+Câu hỏi: {query}
+
+Trả về JSON, không markdown:
 {{
-    "rewrite_query": "Điều {target_article} - [nội dung viết lại bằng thuật ngữ pháp lý]",
-    "vehicle_types": ["xe mô tô", "xe gắn máy"],
-    "violation_category": "giay_to_quen",
-    "hanh_vi_vi_pham": ["hành vi 1", "hành vi 2"],
-    "penalty_min": null,
-    "penalty_max": null
-}}
-Câu hỏi: {user_query}'''
-    else:
-        # Generic rewrite (no article specified)
-        prompt = f'''Viết lại câu hỏi bằng thuật ngữ pháp lý giao thông Việt Nam.
-Chỉ trả về JSON hợp lệ, không giải thích, không markdown, không code block.
+    "rewrite_query": "viết lại câu hỏi bằng thuật ngữ pháp lý",
+    "vehicle_types": [],
+    "violation_category": "",
+    "hanh_vi_vi_pham": []
+}}"""
 
-Danh sách violation_category (chọn 1 phù hợp nhất):
-- "thiet_bi_an_toan": mũ bảo hiểm, gương chiếu hậu, đèn xe, còi, dây an toàn
-- "toc_do": chạy quá tốc độ, vượt tốc độ quy định
-- "nong_do_con": uống rượu bia khi lái xe, nồng độ cồn
-- "giay_to_quen": có giấy tờ nhưng không mang theo khi lái xe (quên mang GPLX, đăng ký xe, bảo hiểm)
-- "giay_to_khong_co": không có giấy phép lái xe, không có đăng ký xe (chưa từng được cấp hoặc hết hạn)
-- "tin_hieu_den": vượt đèn đỏ, không chấp hành tín hiệu đèn giao thông
-- "lan_duong": đi sai làn, vượt xe sai quy định, đi ngược chiều
-- "do_xe": dừng đỗ sai quy định, đỗ xe trên vỉa hè
-- "tai_trong": chở quá tải, quá số người quy định
-- "giao_xe_sai": giao xe cho người không đủ điều kiện
 
-LƯU Ý QUAN TRỌNG:
-- "không mang theo" / "quên mang" giấy tờ → dùng "giay_to_quen"
-- "không có" / "chưa có" / "hết hạn" giấy tờ → dùng "giay_to_khong_co"
+def rewrite_query(user_query: str, classify_result: dict, llm) -> dict:
+    """
+    classify_result: output từ bước classify_query() trước đó
+    {
+        'doc_section':    'xu_phat',
+        'doc_subsection': 'vi_pham_quy_tac_gt',
+        'filter': {...}
+    }
+    """
+    # ── Bước 1: Gọi LLM rewrite ──────────────────────────
+    prompt = REWRITE_PROMPT.format(
+        query         = user_query,
+        doc_section   = classify_result.get('doc_section', ''),
+        doc_subsection= classify_result.get('doc_subsection', ''),
+        categories    = '\n'.join(f'- "{c}"' for c in VIOLATION_CATEGORIES),
+    )
 
-Format trả về:
-{{
-    "rewrite_query": "câu viết lại bằng thuật ngữ pháp lý",
-    "vehicle_types": ["xe mô tô", "xe gắn máy"],
-    "violation_category": "giay_to_quen",
-    "hanh_vi_vi_pham": ["hành vi 1", "hành vi 2"],
-    "penalty_min": null,
-    "penalty_max": null
-}}
-Câu hỏi: {user_query}'''
+    raw = llm.invoke([HumanMessage(content=prompt)]).content.strip()
 
-    rewriter_result = llm.invoke([HumanMessage(content=prompt)])    
-    raw = rewriter_result.content.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    rewrite = json.loads(raw.strip())
+    # Strip markdown nếu LLM vẫn trả về
+    raw = re.sub(r'^```json|```$', '', raw, flags=re.MULTILINE).strip()
+    rewrite = json.loads(raw)
 
-    # ── Inject query — cùng format với chunk ──────────
-    # Tạo fake chunk từ rewrite result để dùng lại hàm inject
+    # ── Bước 2: Build injected query — CÙNG format với chunk ─
+    # Tái dụng build_meta_injection bằng cách tạo fake chunk
     fake_chunk = {
         'text': rewrite['rewrite_query'],
         'metadata': {
-            'vehicle_types': rewrite.get('vehicle_types', []),
+            'vehicle_types':      rewrite.get('vehicle_types', []),
             'violation_category': rewrite.get('violation_category', ''),
-            'hanh_vi_vi_pham': rewrite.get('hanh_vi_vi_pham', []),
-            'penalty_min': rewrite.get('penalty_min'),
-            'penalty_max': rewrite.get('penalty_max'),
+            'hanh_vi_vi_pham':    rewrite.get('hanh_vi_vi_pham', []),
+            'penalty_min':        None,
+            'penalty_max':        None,
+            'tru_diem_gplx':      None,
         }
     }
-
-    injected_query = build_injection_text(fake_chunk)
+    injected_query = build_meta_injection(fake_chunk['metadata'], fake_chunk['text'])
+    # ── Bước 3: Merge filter từ classify + rewrite ───────────
+    final_filter = {
+        **classify_result.get('filter', {}),        # doc_section, doc_subsection, vehicle_groups từ classify
+        'violation_category': rewrite.get('violation_category') or None,
+    }
+    # Loại bỏ None để tránh over-filter
+    final_filter = {k: v for k, v in final_filter.items() if v}
 
     return {
         'original_query': user_query,
-        'rewrite_query': rewrite['rewrite_query'],
-        'injected_query': injected_query,
-        'target_article': target_article,  # [FIX #1] Article number for retrieval filtering
-        'target_section': target_section,  # Keep section for backward compatibility
-        'filter': {
-            'vehicle_types': rewrite.get('vehicle_types', []),
-            'violation_category': rewrite.get('violation_category', '')
-            }
+        'rewrite_query':  rewrite['rewrite_query'],
+        'injected_query': injected_query,   # → đưa vào FAISS search
+        'filter':         final_filter,     # → đưa vào metadata filter
     }

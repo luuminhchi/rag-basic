@@ -1,137 +1,239 @@
 import pickle
 import numpy as np
-from rank_bm25 import BM25Okapi
+import faiss
+from dataclasses import dataclass
+from pathlib import Path
+from sentence_transformers import SentenceTransformer
+from langchain_community.vectorstores import FAISS as LangchainFAISS
+from langchain_huggingface import HuggingFaceEmbeddings
 
-def hybrid_search(
-        processed_query: dict,
-        vectordb,
-        bm25_path: str,
-        top_k: int = 10,
-        target_section: str = "",        # [MOI] section tu Query Router
-        target_article: int = None,      # [FIX #4] Article number for hard filtering
-) -> list:
-    with open(bm25_path, 'rb') as f:
-        bm25 = pickle.load(f)
-    bm25_index = bm25['index']
-    bm25_ids = bm25['ids']
+@dataclass
+class SearchResult:
+    chunk:     dict
+    rrf_score: float
+    source:    str   # 'faiss' | 'bm25' | 'both'
 
-    # Dùng injected_query cho FAISS: khớp với embedding space của chunks đã index
-    faiss_query = processed_query.get('injected_query') or processed_query.get('rewrite_query', '')
-    rewrite_query = processed_query.get('rewrite_query', '')
 
-    # Lấy nhiều hơn để doc_map có đủ Document objects cho BM25 results
-    fetch_k = max(top_k * 3, 30)
-    faiss_results = vectordb.similarity_search_with_score(
-        query=faiss_query,
-        k=fetch_k,
-    )
+class HybridSearcher:
+    def __init__(self, faiss_index, bm25_index, chunks: list[dict], embedder):
+        self.faiss    = faiss_index
+        self.bm25     = bm25_index
+        self.chunks   = chunks
+        self.embedder = embedder
 
-    # BM25 dùng rewrite (không inject) vì BM25 tìm chữ
-    tokens = rewrite_query.lower().split()
-    bm25_scores = bm25_index.get_scores(tokens)
-    bm25_top = np.argsort(bm25_scores)[::-1][:fetch_k]
-    bm25_results = [
-        {'chunk_id': bm25_ids[i], 'score': float(bm25_scores[i])}
-        for i in bm25_top if bm25_scores[i] > 0
-    ]
+        self.id_to_chunk    = {c['metadata']['chunk_id']: c for c in chunks}
+        self.chunk_ids_list = [c['metadata']['chunk_id'] for c in chunks]
 
-    # Soft boost 2 tang: section (tho) -> category (tinh)
-    target_category = processed_query.get('filter', {}).get('violation_category', '')
-    results = _reciprocal_rank_fusion(faiss_results, bm25_results, fetch_k)
-    
-    # [FIX #4] Article-level hard constraint filtering (BEFORE section boost)
-    if target_article is not None:
-        filtered_by_article = [
-            doc for doc in results
-            if doc.metadata.get('dieu') == target_article
+
+    # FAISS
+    def _search_faiss(self, injected_query: str, fetch_k: int) -> list[tuple]:
+        """Returns: [(chunk_id, score), ...]"""
+        q_vec = self.embedder.encode(
+            injected_query,
+            normalize_embeddings=True
+        ).reshape(1, -1).astype('float32')
+
+        scores, indices = self.faiss.search(q_vec, fetch_k)
+
+        return [
+            (self.chunk_ids_list[idx], float(score))
+            for score, idx in zip(scores[0], indices[0])
+            if idx != -1
         ]
-        if filtered_by_article:
-            results = filtered_by_article
-            try:
-                print(f"[DEBUG ARTICLE]: Filtered to {len(results)} results for Article {target_article}")
-            except Exception:
-                pass
-        else:
-            try:
-                print(f"[WARN ARTICLE]: No results for Article {target_article}, using all section results")
-            except Exception:
-                pass
-    
-    # Section boost (after article filtering for efficiency)
-    if target_section:
-        results = _soft_section_boost(results, target_section, top_k * 2)
-    if target_category:
-        results = _soft_category_boost(results, target_category, top_k)
-    else:
-        results = results[:top_k]
-
-    return results
 
 
-def _reciprocal_rank_fusion(faiss_results, bm25_results, top_k, K=60) -> list:
-    rrf_scores = {}
-    doc_map = {}
+    # BM25
+    def _search_bm25(self, rewrite_query: str, fetch_k: int) -> list[tuple]:
+        """Returns: [(chunk_id, score), ...]"""
+        tokens     = rewrite_query.lower().split()
+        bm25_scores = self.bm25.get_scores(tokens)
 
-    for rank, (doc, score) in enumerate(faiss_results[:K]):
-        cid = doc.metadata['chunk_id']
-        rrf_scores[cid] = rrf_scores.get(cid, 0) + 1 / (K + rank + 1)
-        doc_map[cid] = doc
-        
-        # DEBUG: Check metadata preservation
-        if cid == "168_2024_ND-CP_619502_d11_k1_dpb":  # Article 11 traffic signal chunk
-            try:
-                section = doc.metadata.get('doc_section', 'MISSING')
-                print(f"[DEBUG RRF] FAISS result - chunk {cid}: section={section}")
-            except Exception:
-                pass
+        top_indices = np.argsort(bm25_scores)[::-1][:fetch_k]
 
-    for rank, item in enumerate(bm25_results[:K]):
-        cid = item['chunk_id']
-        rrf_scores[cid] = rrf_scores.get(cid, 0) + 1 / (K + rank + 1)
-        # BM25-only docs: chỉ có score, không có Document → skip nếu không có trong doc_map
-
-    sorted_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)
-    # Chỉ trả về docs mà chúng ta có Document object (từ FAISS)
-    result = [doc_map[cid] for cid in sorted_ids if cid in doc_map][:top_k * 2]
-    
-    # DEBUG: Check metadata in output
-    try:
-        if result:
-            first_doc = result[0]
-            section = first_doc.metadata.get('doc_section', 'MISSING')
-            print(f"[DEBUG RRF OUTPUT] First result: section={section}, has_metadata={bool(first_doc.metadata)}")
-    except Exception:
-        pass
-    
-    return result
+        return [
+            (self.chunk_ids_list[i], float(bm25_scores[i]))
+            for i in top_indices
+            if bm25_scores[i] > 0
+        ]
 
 
-def _soft_section_boost(docs, target_section: str, top_k: int) -> list:
-    """
-    Tang boost thu nhat (tho): dua docs dung nhom doc_section len truoc.
-    Giu lai tat ca docs lam fallback, dam bao luon du top_k.
-    """
-    matched = [d for d in docs if d.metadata.get('doc_section') == target_section]
-    others  = [d for d in docs if d.metadata.get('doc_section') != target_section]
-    
-    # DEBUG: Check metadata before/after boost
-    try:
-        print(f"[DEBUG BOOST] Section boost: target={target_section}, matched={len(matched)}, others={len(others)}")
-        if docs:
-            print(f"[DEBUG BOOST] First doc section: {docs[0].metadata.get('doc_section', 'MISSING')}")
-    except Exception:
-        pass
-    
-    return (matched + others)[:top_k]
+    # RRF fusion
+    def _rrf_fusion(
+        self,
+        faiss_hits: list[tuple],  # [(chunk_id, score), ...]
+        bm25_hits:  list[tuple],
+        K: int = 60,
+    ) -> list[SearchResult]:
+        """
+        Trả về list SearchResult đã sort theo rrf_score giảm dần.
+        Giữ score + source theo suốt để dùng ở bước sau.
+        """
+        rrf_scores  = {}
+        source_map  = {}  # chunk_id → 'faiss' | 'bm25' | 'both'
+
+        for rank, (cid, _) in enumerate(faiss_hits):
+            rrf_scores[cid]  = rrf_scores.get(cid, 0) + 1 / (K + rank + 1)
+            source_map[cid]  = 'faiss'
+
+        for rank, (cid, _) in enumerate(bm25_hits):
+            rrf_scores[cid]  = rrf_scores.get(cid, 0) + 1 / (K + rank + 1)
+            source_map[cid]  = 'both' if source_map.get(cid) == 'faiss' else 'bm25'
+
+        # Sort theo rrf_score
+        sorted_cids = sorted(rrf_scores, key=rrf_scores.__getitem__, reverse=True)
+
+        return [
+            SearchResult(
+                chunk     = self.id_to_chunk[cid],
+                rrf_score = rrf_scores[cid],
+                source    = source_map[cid],
+            )
+            for cid in sorted_cids
+            if cid in self.id_to_chunk   # safety check
+        ]
 
 
-def _soft_category_boost(docs, target_category: str, top_k: int) -> list:
-    """
-    Ưu tiên docs khớp category lên đầu, nhưng vẫn giữ các docs khác làm fallback.
-    Đảm bảo luôn trả về top_k docs.
-    """
-    matched = [d for d in docs if d.metadata.get('violation_category') == target_category]
-    others = [d for d in docs if d.metadata.get('violation_category') != target_category]
+    # ─────────────────────────────────────────
+    # Filter
+    # ─────────────────────────────────────────
+    def _apply_filter(
+        self,
+        results: list[SearchResult],
+        filter_dict: dict,
+    ) -> list[SearchResult]:
+        if not filter_dict:
+            return results
 
-    combined = matched + others
-    return combined[:top_k]
+        filtered = []
+        for r in results:
+            meta  = r.chunk.get('metadata', {})
+            match = True
+
+            for key, val in filter_dict.items():
+                if val is None:
+                    continue
+                meta_val = meta.get(key)
+
+                if isinstance(meta_val, list):
+                    # List field: check intersection
+                    check = val if isinstance(val, list) else [val]
+                    if not set(check) & set(meta_val):
+                        match = False; break
+                else:
+                    if meta_val != val:
+                        match = False; break
+
+            if match:
+                filtered.append(r)
+
+        return filtered  # vẫn giữ thứ tự rrf_score vì input đã sorted
+
+
+    # ─────────────────────────────────────────
+    # Main search
+    # ─────────────────────────────────────────
+    def search(
+        self,
+        rewrite_result: dict,
+        top_k:         int  = 10,
+    ) -> list[SearchResult]:
+
+        injected_query = rewrite_result['injected_query']
+        rewrite_query  = rewrite_result['rewrite_query']
+        filter_dict    = rewrite_result.get('filter', {})
+        fetch_k        = top_k * 3
+
+        # ── 1. Search 2 index ──────────────────────
+        faiss_hits = self._search_faiss(injected_query, fetch_k)
+        bm25_hits  = self._search_bm25(rewrite_query,   fetch_k)
+
+        # ── 2. RRF fusion → list SearchResult sorted ─
+        fused = self._rrf_fusion(faiss_hits, bm25_hits)
+
+        # ── 3. Filter có fallback ──────────────────
+        filtered = self._apply_filter(fused, filter_dict)
+
+        if len(filtered) < top_k // 2:
+            # Relax bỏ field ít quan trọng nhất
+            filtered = self._apply_filter(fused, _relax_filter(filter_dict))
+
+        if not filtered:
+            # Fallback cuối: không filter, vẫn giữ rank RRF
+            filtered = fused
+
+        return filtered[:top_k]
+
+
+# Filter relaxation
+
+# Thứ tự ưu tiên: số nhỏ = quan trọng hơn = giữ lâu hơn
+FILTER_PRIORITY = {
+    'doc_section':       1,
+    'doc_subsection':    2,
+    'vehicle_groups':    3,
+    'violation_category':4,
+}
+
+def _relax_filter(filter_dict: dict) -> dict:
+    """Bỏ field ít quan trọng nhất, luôn giữ doc_section."""
+    relaxed    = dict(filter_dict)
+    candidates = [
+        f for f in relaxed
+        if f != 'doc_section' and f in FILTER_PRIORITY
+    ]
+    if candidates:
+        # Bỏ field có priority số lớn nhất (ít quan trọng nhất)
+        to_drop = max(candidates, key=lambda f: FILTER_PRIORITY[f])
+        del relaxed[to_drop]
+    return relaxed
+
+
+# ─────────────────────────────────────────
+# Singleton loader
+# ─────────────────────────────────────────
+_searcher: HybridSearcher | None = None
+
+def _get_searcher() -> HybridSearcher:
+    global _searcher
+    if _searcher is not None:
+        return _searcher
+
+    from src.config import settings
+
+    # Load embedder
+    embedder = SentenceTransformer(settings.embedding_model)
+
+    # Load LangChain FAISS để lấy raw index + chunk ordering
+    lc_faiss = LangchainFAISS.load_local(
+        folder_path=str(settings.vector_store_dir),
+        embeddings=HuggingFaceEmbeddings(model_name=settings.embedding_model),
+        allow_dangerous_deserialization=True,
+    )
+    raw_faiss = lc_faiss.index
+
+    # Reconstruct chunks list theo đúng thứ tự của faiss index
+    chunks = []
+    for pos in range(raw_faiss.ntotal):
+        doc_id  = lc_faiss.index_to_docstore_id[pos]
+        doc     = lc_faiss.docstore.search(doc_id)
+        meta    = dict(doc.metadata)
+        orig    = meta.pop('original_text', doc.page_content)
+        chunks.append({'metadata': meta, 'text': orig})
+
+    # Load BM25
+    with open(settings.bm25_path, 'rb') as f:
+        bm25_data = pickle.load(f)
+    bm25 = bm25_data['index']
+
+    _searcher = HybridSearcher(
+        faiss_index=raw_faiss,
+        bm25_index=bm25,
+        chunks=chunks,
+        embedder=embedder,
+    )
+    return _searcher
+
+
+def search(rewrite_result: dict, top_k: int = 10) -> list[SearchResult]:
+    return _get_searcher().search(rewrite_result, top_k=top_k)
+

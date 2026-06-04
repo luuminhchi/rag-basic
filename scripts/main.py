@@ -3,7 +3,7 @@ from pathlib import Path
 env_path = Path(__file__).resolve().parents[1]/'.env'
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.generator import generate_final_answer
+from src.retrievers.generator import generate_final_answer
 from src.retrievers.retriever import execute_retrieval_pipeline
 from src.llm import llm
 
@@ -13,15 +13,16 @@ class TrafficLawger:
         self.llm = llm
 
     def chat(self, user_query: str) -> str:
-        retrieved_docs, rewritten_query = execute_retrieval_pipeline(user_query = user_query)
-        if not retrieved_docs:
+        final_chunks, classify_result = execute_retrieval_pipeline(user_query = user_query, top_k=5)
+        if not final_chunks:
             return "Xin lỗi, tôi không tìm thấy tài liệu nào liên quan đến câu hỏi của bạn."
 
         print("Đang phân tích và tổng hợp câu trả lời...")
         final_response = generate_final_answer(
-            user_query=user_query,
-            retrieved_docs=retrieved_docs,
-            llm=self.llm
+            user_query,
+            final_chunks,
+            classify_result,
+            self.llm
         )
         
         return final_response

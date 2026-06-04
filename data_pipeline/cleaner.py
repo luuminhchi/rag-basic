@@ -1,6 +1,7 @@
 import logging
 import re
 from pathlib import Path
+import sys
 
 log = logging.getLogger(__name__)
 
@@ -8,12 +9,8 @@ MULTI_BLANK = re.compile(r'\n{3,}')
 TAB_PATTERN = re.compile(r'\t+')
 
 CHUONG_I_PATTERN = re.compile(r'Chương\s+I', re.IGNORECASE)
-STOP_PATTERN = re.compile(r'Chương\s+IV', re.IGNORECASE)
+STOP_PATTERN = re.compile(r'Chương\s+III', re.IGNORECASE)
 
-# STOP_PATTERN = re.compile(
-#     r'Nơi\s*nhận|TM\.\s*CHÍNH\s*PHỦ',
-#     re.IGNORECASE
-# )
 
 
 def clear_document(raw_text: str) -> str:
@@ -50,14 +47,14 @@ def clear_text(input_path: Path, output_path: Path) -> int:
     return len(cleaned.splitlines())
 
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+# if __name__ == '__main__':
+#     logging.basicConfig(level=logging.INFO)
+#     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+#     input_file = Path('data/processed/168_2024_ND-CP_619502_raw.md')
+#     output_file = Path('data/processed/168_2024_ND-CP_619502.md')
 
-    input_file = Path('D:\\trafficChatbot_rag\\data\\processor\\168_2024_ND-CP_619502_raw.md')
-    output_file = Path('D:\\trafficChatbot_rag\\data\\processor\\168_2024_ND-CP_619502.md')
-
-    if input_file.exists():
-        total_lines = clear_text(input_path=input_file, output_path=output_file)
-        print(f'Clear thành công! File mới bắt đầu từ Chương I và có {total_lines} dòng sạch.')
-    else:
-        print(f'Không tìm thấy file nguồn tại: {input_file}')
+#     if input_file.exists():
+#         total_lines = clear_text(input_path=input_file, output_path=output_file)
+#         print(f'Clear thành công! File mới bắt đầu từ Chương I và có {total_lines} dòng sạch.')
+#     else:
+#         print(f'Không tìm thấy file nguồn tại: {input_file}')

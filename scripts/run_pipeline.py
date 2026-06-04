@@ -68,7 +68,7 @@ def main():
     db_faiss   = Path("storage/faiss_index")
     db_bm25    = Path("storage/bm25_index.pkl")
     doc_id = '168_2024_ND-CP_619502'
-    # run_pipeline(raw_dir, doc_id)
+    run_pipeline(raw_dir, doc_id)
     
     try:
         run_indexing_pipeline(

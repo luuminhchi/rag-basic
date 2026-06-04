@@ -1,54 +1,54 @@
-CATEGORY_MAP = {
-    'thiet_bi_an_toan':  'thiết bị an toàn',
-    'toc_do': 'tốc độ',
-    'nong_do_con': 'nồng độ cồn',
-    'giay_to_quen': 'giấy tờ không mang theo',
-    'giay_to_khong_co': 'không có giấy tờ',
-    'tin_hieu_den': 'tín hiệu đèn giao thông',
-    'lan_duong': 'làn đường',
-    'do_xe': 'dừng độ xe',
-    'tai_trong': 'tải trọng',
-    'giao_xe_sai': 'giao xe sai',
-}
+def build_meta_injection(meta: dict, chunk_text: str) -> str:
+    """
+    Chỉ inject các SEMANTIC fields.
+    Các field None hoặc empty → bỏ qua, không tạo dòng thừa.
+    """
+    lines = []
 
-SECTION_MAP = {
-    'xu_phat':        'xử phạt vi phạm giao thông theo phương tiện',
-    'tru_diem':       'trừ điểm giấy phép lái xe',
-    'thu_tuc':        'thủ tục thẩm quyền xử phạt giao thông',
-    'quy_dinh_chung': 'quy định chung nguyên tắc giao thông',
-}
+    # --- Nhóm 1: Định danh ngữ nghĩa (tên, không phải số) ---
+    if meta.get('muc_ten'):
+        lines.append(f"[Nhóm vi phạm: {meta['muc_ten']}]")
 
-def build_injection_text(chunk: dict) -> str:
-    meta = chunk['metadata']
-    original_text = chunk['text']
-    parts = []
+    if meta.get('tieu_de'):
+        lines.append(f"[Điều khoản: {meta['tieu_de']}]")
 
-    # [MOI] Them nhom tai lieu vao dau header
-    section = meta.get('doc_section', '')
-    if section:
-        section_label = SECTION_MAP.get(section, section)
-        parts.append(f'[Nhóm tài liệu]: {section_label}')
-
+    # --- Nhóm 2: Phương tiện ---
     if meta.get('vehicle_types'):
-        vehicles_str = ', '.join(meta['vehicle_types'])
-        parts.append(f'[Đối tượng áp dụng]: {vehicles_str}')
-    
+        vt = ', '.join(meta['vehicle_types'])
+        lines.append(f"[Phương tiện: {vt}]")
+
+    # --- Nhóm 3: Hành vi và đối tượng ---
     if meta.get('violation_category'):
-        violations_str = CATEGORY_MAP.get(
-            meta['violation_category'],
-            meta['violation_category']
-        )
-        parts.append(f'[Danh mục lỗi]: {violations_str}')
-    
+        lines.append(f"[Loại vi phạm: {meta['violation_category']}]")
+
     if meta.get('hanh_vi_vi_pham'):
-        behiviors = ', '.join(meta['hanh_vi_vi_pham'])
-        parts.append(f'[Các hành vi cụ thể]: {behiviors}')
-    if meta.get('penalty_min') and meta.get('penalty_max'):
-        pmin = f'{meta["penalty_min"]:,}'
-        pmax = f'{meta["penalty_max"]:,}'
-        parts.append(f'[Mức phạt]: {pmin}đ đến {pmax}đ')
-    
-    injectied_header = '\n'.join(parts)
-    if not injectied_header:
-        return original_text
-    return f'{injectied_header}\n{original_text}'
+        lines.append(f"[Hành vi: {meta['hanh_vi_vi_pham']}]")
+
+    if meta.get('doi_tuong_ap_dung'):
+        lines.append(f"[Đối tượng: {meta['doi_tuong_ap_dung']}]")
+
+    # --- Nhóm 4: Chế tài (format thân thiện, không phải số raw) ---
+    pmin = meta.get('penalty_min')
+    pmax = meta.get('penalty_max')
+    if pmin and pmax:
+        lines.append(
+            f"[Phạt tiền: {pmin:,} - {pmax:,} đồng]"
+            .replace(',', '.')   # format VN: 2.000.000
+        )
+
+    if meta.get('tru_diem_gplx'):
+        lines.append(f"[Trừ điểm GPLX: {meta['tru_diem_gplx']} điểm]")
+
+    if meta.get('hinh_thuc_phat_bo_sung'):
+        lines.append(f"[Hình thức phạt bổ sung: {meta['hinh_thuc_phat_bo_sung']}]")
+
+    gplx_min = meta.get('tuoc_gplx_min')
+    gplx_max = meta.get('tuoc_gplx_max')
+    if gplx_min and gplx_max:
+        lines.append(f"[Tước GPLX: {gplx_min} - {gplx_max} tháng]")
+
+    # --- Ghép header + text gốc ---
+    if lines:
+        header = '\n'.join(lines)
+        return f"{header}\n\n{chunk_text}"
+    return chunk_text

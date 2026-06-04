@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 
 from src.vector_db import get_vector_store
 from src.retrievers.retriever import execute_retrieval_pipeline
-from src.generator import generate_final_answer
+from retrievers.generator import generate_final_answer
 from src.llm import llm
 
 logger = logging.getLogger(__name__)
