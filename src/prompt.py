@@ -82,6 +82,6 @@ USER_PROMPT_TEMPLATE = """{intent_instruction}
 {context}
 
 [YÊU CẦU TRẢ LỜI]
-Trả lời ngắn gọn, rõ ràng. Trích dẫn số Điều, Khoản cụ thể."""
+Trả lời ngắn gọn, rõ ràng. Trích dẫn số Điều, Khoản cụ thể và bỏ vào dấu ngoặc kép."""
 
 

@@ -22,6 +22,8 @@ _EXPECTED_FIELDS = {
     "hanh_vi_vi_pham":        list,
     "hinh_thuc_phat_bo_sung": list,
     "doi_tuong_ap_dung":      str,
+    'tru_diem_gplx':          (int, type(None)),
+    'lai_tai_pham':           bool,
 }
 
 _FIELD_DEFAULTS: dict[str, Any] = {
@@ -29,6 +31,8 @@ _FIELD_DEFAULTS: dict[str, Any] = {
     "hanh_vi_vi_pham":        [],
     "hinh_thuc_phat_bo_sung": [],
     "doi_tuong_ap_dung":      "",
+    'tru_diem_gplx':          None,
+    'lai_tai_pham':           False,
 }
 
 
@@ -45,10 +49,16 @@ def _parse_llm_response(raw: str) -> dict:
         # Ép kiểu nếu LLM trả sai
         if expected_type is list and not isinstance(value, list):
             value = [value] if value else []
-        else:
-            expected_type is str and not isinstance(value, str)
+        elif expected_type is str and not isinstance(value, str):
             value = str(value) if value is not None else ""
-      
+        elif expected_type is int and not isinstance(value, int):
+            try:
+                value = int(value)
+            except (ValueError, TypeError):
+                value = None
+        elif expected_type is bool and not isinstance(value, bool):
+            value = bool(value)
+
 
         result[field] = value
 
@@ -114,7 +124,6 @@ class MetadataExtractor:
     def enrich_chunks(self, chunks: list[dict], log_every: int = 50) -> list[dict]:
         """
         Enrich toàn bộ danh sách chunk.
-
         """
         total = len(chunks)
         result = []

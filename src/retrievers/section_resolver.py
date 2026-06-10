@@ -14,11 +14,11 @@ INTENT_TO_SECTION = {
         'doc_subsection': None,
         'filter_fields': ['tru_diem_gplx', 'tuoc_gplx_min', 'has_tru_diem']
     },
-    'query_thu_tuc': {
-        'doc_section':   'tham_quyen_thu_tuc',
-        'doc_subsection': 'thu_tuc_xu_phat',
-        'filter_fields': []
-    },
+    # 'query_thu_tuc': {
+    #     'doc_section':   'tham_quyen_thu_tuc',
+    #     'doc_subsection': 'thu_tuc_xu_phat',
+    #     'filter_fields': []
+    # },
    
     'query_tong_hop': {
         'doc_section':   'xu_phat',

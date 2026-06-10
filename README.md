@@ -118,7 +118,7 @@ Tạo file `.env` ở thư mục gốc:
 
 ```env
 HUGGINGFACEHUB_API_TOKEN=hf_xxxxxxxxxxxxx
-GOOGLE_API_KEY=AIzaSy...           # Nếu dùng Gemini
+DEEPSEEK_API_KEY=AIzaSy...           # Nếu dùng Gemini
 OPENAI_API_KEY=sk-...              # Nếu dùng OpenAI
 ```
 
@@ -171,15 +171,12 @@ Hỏi đáp về pháp luật giao thông.
 **Request body:**
 ```json
 {
-  "query": "Vượt đèn đỏ bị phạt bao nhiêu?",
-  "vehicle_type": "xe máy"
+  "query": "Xe máy Vượt đèn đỏ bị phạt bao nhiêu?",
+
 }
 ```
 
-| Field | Type | Bắt buộc | Mô tả |
-|-------|------|----------|-------|
-| `query` | string | ✅ | Câu hỏi (1–1000 ký tự) |
-| `vehicle_type` | string | ❌ | Loại phương tiện (ô tô, xe máy, ...) |
+
 
 **Response:**
 ```json
@@ -190,38 +187,3 @@ Hỏi đáp về pháp luật giao thông.
 }
 ```
 
-| Field | Mô tả |
-|-------|-------|
-| `answer` | Câu trả lời có trích dẫn điều khoản |
-| `rewritten_query` | Câu hỏi sau khi phiên dịch sang thuật ngữ pháp lý |
-| `elapsed_seconds` | Thời gian xử lý (giây) |
-
----
-
-## Công nghệ sử dụng
-
-| Thành phần | Công nghệ |
-|-----------|-----------|
-| API Framework | FastAPI + Uvicorn |
-| Embedding Model | `intfloat/multilingual-e5-base` |
-| Vector Database | FAISS (CPU) |
-| Keyword Search | BM25 (`rank_bm25`) |
-| LLM | Qwen/Qwen2.5-7B-Instruct (HuggingFace Inference API) |
-| LLM (cấu hình thay thế) | Google Gemini 2.5 Flash |
-| RAG Orchestration | LangChain |
-| PDF Processing | docling, pdfplumber, pymupdf4llm |
-
----
-
-## Cấu hình nâng cao (`src/config.py`)
-
-| Tham số | Mặc định | Mô tả |
-|---------|----------|-------|
-| `vector_store_dir` | `storage/faiss_index` | Đường dẫn FAISS index |
-| `embedding_model` | `intfloat/multilingual-e5-base` | Model embedding |
-| `chunk_size` | `1000` | Kích thước chunk (ký tự) |
-| `chunk_overlap` | `150` | Overlap giữa các chunk |
-| `top_k` | `5` | Số tài liệu trả về |
-| `llm_provider` | `gemini` | Provider LLM |
-| `llm_model` | `gemini-2.5-flash` | Model LLM |
-| `llm_temperature` | `0.1` | Temperature (thấp = ổn định) |

@@ -79,7 +79,7 @@ class HybridSearcher:
             rrf_scores[cid]  = rrf_scores.get(cid, 0) + 1 / (K + rank + 1)
             source_map[cid]  = 'both' if source_map.get(cid) == 'faiss' else 'bm25'
 
-        # Sort theo rrf_score
+        # Sort theo rrf_score (__getitem__ chỉ sắp xếp các trường score)
         sorted_cids = sorted(rrf_scores, key=rrf_scores.__getitem__, reverse=True)
 
         return [
@@ -91,8 +91,6 @@ class HybridSearcher:
             for cid in sorted_cids
             if cid in self.id_to_chunk   # safety check
         ]
-
-
     # ─────────────────────────────────────────
     # Filter
     # ─────────────────────────────────────────

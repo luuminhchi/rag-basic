@@ -76,6 +76,7 @@ def ask_question(
         answer_raw = generator(
             user_query=request.query,
             retrieved_docs=docs,
+            classify_result={},  # Nếu cần, có thể sửa retriever để trả classify_result về
             llm=llm,
         )
 

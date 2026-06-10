@@ -16,7 +16,9 @@ def build_meta_injection(meta: dict, chunk_text: str) -> str:
     if meta.get('vehicle_types'):
         vt = ', '.join(meta['vehicle_types'])
         lines.append(f"[Phương tiện: {vt}]")
-
+    if meta.get('vehicle_groups'):
+        vg = ', '.join(meta['vehicle_groups'])
+        lines.append(f"[Nhóm phương tiện: {vg}]")
     # --- Nhóm 3: Hành vi và đối tượng ---
     if meta.get('violation_category'):
         lines.append(f"[Loại vi phạm: {meta['violation_category']}]")

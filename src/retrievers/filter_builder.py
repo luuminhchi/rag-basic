@@ -36,12 +36,12 @@ def extract_entities(query: str) -> dict:
         'doc_subsection': None,
         'special':        {}
     }
-
+    # lấy thông tin nhóm phương tiện, loại vi phạm, điều kiện đặc thù từ câu hỏi 
     for pattern, group in ENTITY_EXTRACTORS['vehicle'].items():
         if re.search(pattern, query_lower):
             result['vehicle_group'] = group
             break
-
+# Lấy thông tin loại vi phạm để xác định doc_subsection
     for pattern, subsection in ENTITY_EXTRACTORS['violation_type'].items():
         if re.search(pattern, query_lower):
             result['doc_subsection'] = subsection
@@ -50,6 +50,8 @@ def extract_entities(query: str) -> dict:
     for pattern, key in ENTITY_EXTRACTORS['special_condition'].items():
         m = re.search(pattern, query_lower)
         if m:
-            result['special'][key] = m.group(1) if m.lastindex else True
+            #hãy lấy con số nằm trong ngoặc bỏ vào DB (m.group(1)). Nếu không có ngoặc (else), 
+            # chỉ cần đánh dấu giá trị True để báo cho hệ thống biết là người này có dính điều kiện đặc biệt đó!"
+            result['special'][key] = m.group(1) if m.lastindex else True 
 
     return result

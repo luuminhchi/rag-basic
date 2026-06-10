@@ -35,4 +35,4 @@ def execute_retrieval_pipeline(
     print(f"[DEBUG RERANK]   top scores: "
           f"{[round(r.rerank_score, 3) for r in final]}")
 
-    return final, classify_result
+    return final, processed['rewrite_query']

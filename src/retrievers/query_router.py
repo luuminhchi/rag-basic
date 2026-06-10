@@ -17,7 +17,7 @@ def classify_query(query: str) -> dict:
             intent = intent_type
             break
 
-    # Tầng 2: section từ intent
+    # Tầng 2: section từ intent (để routing + filter cơ bản)
     section_info = INTENT_TO_SECTION[intent]
 
     # Tầng 3: entity extraction
